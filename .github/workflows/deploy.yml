@@ -1,0 +1,65 @@
+name: Build & deploy to GitHub Pages
+
+# Every branch is built and published to the same site root:
+#   https://<owner>.github.io/<repo>/
+# The most recent push wins, whichever branch it came from.
+on:
+  push:
+    branches: ['**', '!gh-pages']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+# Deploys run one at a time in push order, so the last push is the one that ends up live.
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Compute base path
+        id: paths
+        run: |
+          REPO="${GITHUB_REPOSITORY#*/}"
+          if [[ "$REPO" == *.github.io ]]; then BASE="/"; else BASE="/${REPO}/"; fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io${BASE}" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          BASE_PATH: ${{ steps.paths.outputs.base }}
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./dist
+          keep_files: false # replace the whole site: last deploy wins
+          commit_message: 'Deploy ${{ github.ref_name }} @ ${{ github.sha }}'
+
+      - name: Make sure Pages serves the gh-pages branch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pages" >/dev/null 2>&1 \
+            || gh api -X POST "repos/${GITHUB_REPOSITORY}/pages" -f "source[branch]=gh-pages" -f "source[path]=/" \
+            || echo "::warning::Enable Pages manually: Settings → Pages → Deploy from a branch → gh-pages / (root)"
+
+      - name: Summary
+        run: echo "Deployed **${GITHUB_REF_NAME}** (${GITHUB_SHA::7}) to ${{ steps.paths.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
