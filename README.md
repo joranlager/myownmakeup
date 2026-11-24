@@ -28,11 +28,8 @@ The camera needs `https://` or `localhost`. To test on a phone, use the deployed
 
 ## Deploy (GitHub Pages, every branch)
 
-`.github/workflows/deploy.yml` builds on every push to any branch and publishes to the `gh-pages` branch:
+`.github/workflows/deploy.yml` builds on every push to any branch and publishes the result to the `gh-pages` branch, which GitHub Pages serves at **https://joranlager.github.io/myownmakeup/**.
 
-| Branch | URL |
-|---|---|
-| `main` (default) | `https://<owner>.github.io/<repo>/` |
-| any other branch | `https://<owner>.github.io/<repo>/branches/<branch-slug>/` |
+All branches deploy to that same URL. The last deploy wins: whichever branch was pushed most recently is what's live. The run summary in the Actions tab shows which branch and commit was deployed.
 
-When a branch is deleted, its published copy is removed too. The workflow tries to enable Pages automatically. If that fails, go to **Settings → Pages → Build and deployment → Deploy from a branch** and choose `gh-pages` / `(root)`.
+Pages is set to **Deploy from a branch → `gh-pages` / `(root)`**. The workflow re-enables it if it gets switched off.

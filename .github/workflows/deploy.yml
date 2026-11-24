@@ -1,48 +1,38 @@
 name: Build & deploy to GitHub Pages
 
-# Every branch is built and published:
-#   main            -> https://<owner>.github.io/<repo>/
-#   any other branch -> https://<owner>.github.io/<repo>/branches/<branch-slug>/
-# All builds live side by side on the `gh-pages` branch, which GitHub Pages serves.
+# Every branch is built and published to the same site root:
+#   https://<owner>.github.io/<repo>/
+# The most recent push wins, whichever branch it came from.
 on:
   push:
     branches: ['**', '!gh-pages']
-  delete:
   workflow_dispatch:
 
 permissions:
   contents: write
   pages: write
 
+# Deploys run one at a time in push order, so the last push is the one that ends up live.
 concurrency:
   group: gh-pages-deploy
   cancel-in-progress: false
 
 jobs:
   build-deploy:
-    if: github.event_name != 'delete'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - name: Compute paths
+      - name: Compute base path
         id: paths
         run: |
-          BRANCH="${GITHUB_REF_NAME}"
-          SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g')
           REPO="${GITHUB_REPOSITORY#*/}"
-          if [[ "$REPO" == *.github.io ]]; then ROOT="/"; else ROOT="/${REPO}/"; fi
-          if [[ "$BRANCH" == "${{ github.event.repository.default_branch }}" ]]; then
-            DEST="."; BASE="$ROOT"
-          else
-            DEST="branches/${SLUG}"; BASE="${ROOT}branches/${SLUG}/"
-          fi
-          echo "dest=$DEST" >> "$GITHUB_OUTPUT"
+          if [[ "$REPO" == *.github.io ]]; then BASE="/"; else BASE="/${REPO}/"; fi
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io${BASE}" >> "$GITHUB_OUTPUT"
 
@@ -59,8 +49,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./dist
-          destination_dir: ${{ steps.paths.outputs.dest }}
-          keep_files: true
+          keep_files: false # replace the whole site: last deploy wins
           commit_message: 'Deploy ${{ github.ref_name }} @ ${{ github.sha }}'
 
       - name: Make sure Pages serves the gh-pages branch
@@ -73,23 +62,4 @@ jobs:
             || echo "::warning::Enable Pages manually: Settings → Pages → Deploy from a branch → gh-pages / (root)"
 
       - name: Summary
-        run: echo "Deployed **${GITHUB_REF_NAME}** to ${{ steps.paths.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
-
-  # Remove the published copy of a branch when the branch is deleted.
-  cleanup:
-    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-      - name: Remove branch build
-        run: |
-          SLUG=$(echo "${{ github.event.ref }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g')
-          if [ -d "branches/$SLUG" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
-            git rm -rq "branches/$SLUG"
-            git commit -m "Remove build for deleted branch ${{ github.event.ref }}"
-            git push
-          fi
+        run: echo "Deployed **${GITHUB_REF_NAME}** (${GITHUB_SHA::7}) to ${{ steps.paths.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
