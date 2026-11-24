@@ -1,5 +1,5 @@
 import './style.css';
-import { h } from './ui.js';
+import { h, toast } from './ui.js';
 import { state, load, onChange, currentStyle } from './state.js';
 import { scanView } from './views/scan.js';
 import { kitView } from './views/kit.js';
@@ -49,7 +49,29 @@ function go(id) {
   window.scrollTo(0, 0);
 }
 
-const header = h('header', { class: 'topbar' }, h('button', { class: 'brand', onclick: () => go('home') }, '💄 My Own Makeup'), h('span', { class: 'style-badge' }));
+/** Hard reload: drop any HTTP/Cache Storage/service worker copies and fetch the app fresh (saved data is kept). */
+async function hardReload() {
+  toast('Reloading app…', 1500);
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations()) || [];
+    await Promise.all(regs.map((r) => r.unregister()));
+    if (window.caches) await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+  } catch (e) { console.warn('cache clear failed', e); }
+  const url = new URL(location.href);
+  url.searchParams.set('reload', Date.now().toString(36)); // bypass the cached index.html
+  location.replace(url.href);
+}
+
+// Tap the logo to go home; tap it 4 times quickly to hard reload the app.
+let taps = [];
+function onBrandTap() {
+  const now = performance.now();
+  taps = [...taps.filter((t) => now - t < 1500), now];
+  if (taps.length >= 4) { taps = []; hardReload(); return; }
+  go('home');
+}
+
+const header = h('header', { class: 'topbar' }, h('button', { class: 'brand', onclick: onBrandTap, title: 'Home (tap 4× to reload the app)' }, '💄 My Own Makeup'), h('span', { class: 'style-badge' }));
 const nav = h('nav', { class: 'tabbar' }, NAV.map(([id, icon, label]) => h('button', { 'data-id': id, onclick: () => go(id) }, h('span', { class: 'ico' }, icon), label)));
 const main = h('main', {}, Object.values(views).map((v) => v.el));
 app.replaceChildren(header, main, nav);
@@ -60,6 +82,10 @@ window.addEventListener('hashchange', () => go(location.hash.slice(1)));
 
 await load();
 badge();
+// remove the cache-busting parameter left by a hard reload
+if (new URL(location.href).searchParams.has('reload')) {
+  const u = new URL(location.href); u.searchParams.delete('reload'); history.replaceState(null, '', u.href);
+}
 go(location.hash.slice(1) || 'home');
 // warm up the face tracker in the background
 videoLandmarker().catch((e) => console.warn('face tracker preload failed', e));
